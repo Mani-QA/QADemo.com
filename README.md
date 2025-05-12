@@ -32,6 +32,8 @@ A PHP/SQLite-based e-commerce website specifically designed for automated testin
   - Order history
   - Stock level modification
 
+![QA Demo Product Catalog](https://raw.githubusercontent.com/Mani-QA/QADemo.com/refs/heads/main/QADemo.png)
+
 ## Requirements
 
 - PHP 7.4 or higher
