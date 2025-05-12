@@ -22,11 +22,11 @@ try {
 
 
 
-    // Check if user is logged in
+    // Require login only for checkout, not for viewing cart or catalog
 
     if (!$auth->isLoggedIn()) {
 
-        header('Location: index.php');
+        header('Location: login.php?redirect=checkout.php');
 
         exit;
 
@@ -300,7 +300,7 @@ try {
 
                     <div class="flex-shrink-0 flex items-center">
 
-                        <h1 class="text-xl font-bold">QA Demo</h1>
+                        <h1 class="text-xl font-bold"><a href="index.php">QA Demo</a></h1>
 
                     </div>
 
@@ -318,7 +318,15 @@ try {
 
                         <?php endif; ?>
 
+                        <?php if ($auth->isLoggedIn()): ?>
+
                         <a href="logout.php" class="ml-4 p-2 text-gray-600 hover:text-gray-900">Logout</a>
+
+                        <?php else: ?>
+
+                        <a href="index.php" class="ml-4 p-2 text-gray-600 hover:text-gray-900">Login</a>
+
+                        <?php endif; ?>
 
                     </div>
 

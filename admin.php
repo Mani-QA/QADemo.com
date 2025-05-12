@@ -142,7 +142,11 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                 </div>
                 <div class="flex items-center space-x-4">
                     <a href="catalog.php" class="text-gray-600 hover:text-gray-900">View Store</a>
+                    <?php if ($auth->isLoggedIn()): ?>
                     <a href="logout.php" class="text-gray-600 hover:text-gray-900">Logout</a>
+                    <?php else: ?>
+                    <a href="index.php" class="text-gray-600 hover:text-gray-900">Login</a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

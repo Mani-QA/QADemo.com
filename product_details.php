@@ -1,35 +1,46 @@
 <?php
-
 // Start output buffering
 ob_start();
 
+require_once 'config/database.php';
+require_once 'includes/auth.php';
+
+$db = new Database();
+$auth = new Auth($db->getConnection());
+
+$error = '';
+$product = null;
+$cartCount = isset($_SESSION['cart']) ? array_sum($_SESSION['cart']) : 0;
+
 try {
-    require_once 'config/database.php';
-    require_once 'includes/auth.php';
-
-    $db = new Database();
-    $auth = new Auth($db->getConnection());
-
+    // Validate product ID
+    $productId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+    if ($productId <= 0) {
+        throw new Exception('Invalid product ID');
+    }
+    // Fetch product
+    $stmt = $db->getConnection()->prepare('SELECT * FROM products WHERE id = :id');
+    $stmt->bindValue(':id', $productId, SQLITE3_INTEGER);
+    $result = $stmt->execute();
+    $product = $result->fetchArray(SQLITE3_ASSOC);
+    if (!$product) {
+        throw new Exception('Product not found');
+    }
     // Initialize cart if not exists
     if (!isset($_SESSION['cart'])) {
         $_SESSION['cart'] = [];
     }
-
     // Handle cart actions via AJAX
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if (!$auth->validateCSRFToken($_POST['csrf_token'])) {
-            die('Invalid request');
+            error_log(date('Y-m-d H:i:s') . " Invalid CSRF in product_details.php\n", 3, __DIR__ . '/error_log');
+            die(json_encode(['success' => false, 'message' => 'Invalid request']));
         }
-
-        $productId = (int)$_POST['product_id'];
         $action = $_POST['action'];
-
         switch ($action) {
             case 'add':
                 if (!isset($_SESSION['cart'][$productId])) {
                     $_SESSION['cart'][$productId] = 1;
-                } else {
-                    $_SESSION['cart'][$productId]++;
                 }
                 break;
             case 'remove':
@@ -38,30 +49,18 @@ try {
                 }
                 break;
         }
-        
-        // Return JSON response for AJAX
+        $cartCount = array_sum($_SESSION['cart']);
         header('Content-Type: application/json');
         echo json_encode([
             'success' => true,
-            'cartCount' => array_sum($_SESSION['cart']),
+            'cartCount' => $cartCount,
             'action' => $action
         ]);
         exit;
     }
-
-    // Get all products
-    $stmt = $db->getConnection()->prepare('SELECT * FROM products ORDER BY name');
-    $result = $stmt->execute();
-    $products = [];
-    while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-        $products[] = $row;
-    }
-
-    // Calculate total items in cart
     $cartCount = array_sum($_SESSION['cart']);
-
 } catch (Exception $e) {
-    debug_log("Error in catalog.php: " . $e->getMessage());
+    error_log(date('Y-m-d H:i:s') . " Error in product_details.php: " . $e->getMessage() . "\n", 3, __DIR__ . '/error_log');
     $error = 'An error occurred. Please try again later.';
 }
 ?>
@@ -70,7 +69,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QA Demo Products</title>
+    <title>Product Details - QA Demo</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
@@ -102,93 +101,73 @@ try {
                         <?php if ($auth->isLoggedIn()): ?>
                         <a href="logout.php" class="ml-4 p-2 text-gray-600 hover:text-gray-900">Logout</a>
                         <?php else: ?>
-                        <a href="login.php" class="ml-4 p-2 text-gray-600 hover:text-gray-900">Login</a>
+                        <a href="index.php" class="ml-4 p-2 text-gray-600 hover:text-gray-900">Login</a>
                         <?php endif; ?>
                     </div>
                 </div>
             </div>
         </div>
     </nav>
-
     <!-- Main Content -->
-    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <?php if (isset($error)): ?>
+    <main class="max-w-2xl mx-auto py-8">
+        <?php if ($error): ?>
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
                 <span class="block sm:inline"><?php echo htmlspecialchars($error); ?></span>
             </div>
-        <?php endif; ?>
-
-        <div class="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div class="px-4 py-5 sm:px-6">
-                <h2 class="text-lg leading-6 font-medium text-gray-900">Product Catalog</h2>
-            </div>
-            
-            <div class="border-t border-gray-200">
-                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 p-4">
-                    <?php foreach ($products as $product): ?>
-                        <div class="bg-white overflow-hidden shadow rounded-lg">
-                            <a href="product_details.php?id=<?php echo $product['id']; ?>">
-                                <img src="<?php echo htmlspecialchars($product['image_path'] ?? 'images/placeholder.jpg'); ?>" 
-                                     alt="<?php echo htmlspecialchars($product['name']); ?>"
-                                     class="w-full h-48 object-cover">
-                            </a>
-                            <div class="p-4">
-                                <h3 class="text-lg font-medium text-gray-900">
-                                    <a href="product_details.php?id=<?php echo $product['id']; ?>">
-                                        <?php echo htmlspecialchars($product['name']); ?>
-                                    </a>
-                                </h3>
-                                <p class="mt-1 text-sm text-gray-500">
-                                    <?php echo htmlspecialchars($product['description']); ?>
-                                </p>
-                                <div class="mt-4 flex items-center justify-between">
-                                    <span class="text-lg font-medium text-gray-900">
-                                        $<?php echo number_format($product['price'], 2); ?>
-                                    </span>
-                                    <button type="button" 
-                                            class="cart-button inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-                                            data-product-id="<?php echo $product['id']; ?>"
-                                            data-action="<?php echo isset($_SESSION['cart'][$product['id']]) ? 'remove' : 'add'; ?>">
-                                        <?php echo isset($_SESSION['cart'][$product['id']]) ? 'Remove' : 'Add to Cart'; ?>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
+        <?php elseif ($product): ?>
+            <div class="bg-white shadow overflow-hidden sm:rounded-lg p-6 flex flex-col md:flex-row">
+                <img src="<?php echo htmlspecialchars($product['image_path'] ?? 'images/placeholder.jpg'); ?>" alt="<?php echo htmlspecialchars($product['name']); ?>" class="w-full md:w-1/2 h-64 object-cover rounded mb-4 md:mb-0 md:mr-6">
+                <div class="flex-1">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2"><?php echo htmlspecialchars($product['name']); ?></h2>
+                    <p class="text-gray-700 mb-4"><?php echo htmlspecialchars($product['description']); ?></p>
+                    <div class="mb-2 text-lg font-semibold text-gray-900">$<?php echo number_format($product['price'], 2); ?></div>
+                    <div class="mb-4 text-sm text-gray-600">Available: <?php echo (int)$product['stock']; ?></div>
+                    <div>
+                        <button type="button"
+                            id="cart-action-btn"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white <?php echo isset($_SESSION['cart'][$productId]) ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'; ?>"
+                            data-action="<?php echo isset($_SESSION['cart'][$productId]) ? 'remove' : 'add'; ?>"
+                            <?php echo (isset($_SESSION['cart'][$productId]) ? '' : ''); ?>>
+                            <?php echo isset($_SESSION['cart'][$productId]) ? 'Remove' : 'Add to Cart'; ?>
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
+        <?php endif; ?>
     </main>
-
     <script>
     $(document).ready(function() {
-        $('.cart-button').click(function() {
-            const button = $(this);
-            const productId = button.data('product-id');
-            const action = button.data('action');
-            const csrfToken = '<?php echo $auth->generateCSRFToken(); ?>';
-
+        var processing = false;
+        $('#cart-action-btn').click(function() {
+            if (processing) return;
+            processing = true;
+            var button = $(this);
+            var action = button.data('action');
+            var csrfToken = '<?php echo $auth->generateCSRFToken(); ?>';
+            button.prop('disabled', true);
             $.ajax({
-                url: 'catalog.php',
+                url: 'product_details.php?id=<?php echo $productId; ?>',
                 method: 'POST',
                 data: {
                     action: action,
-                    product_id: productId,
                     csrf_token: csrfToken
                 },
                 success: function(response) {
                     if (response.success) {
-                        // Toggle button text and action
                         if (action === 'add') {
-                            button.text('Remove').data('action', 'remove');
+                            button.text('Remove')
+                                  .data('action', 'remove')
+                                  .removeClass('bg-indigo-600 hover:bg-indigo-700')
+                                  .addClass('bg-red-600 hover:bg-red-700');
                         } else {
-                            button.text('Add to Cart').data('action', 'add');
+                            button.text('Add to Cart')
+                                  .data('action', 'add')
+                                  .removeClass('bg-red-600 hover:bg-red-700')
+                                  .addClass('bg-indigo-600 hover:bg-indigo-700');
                         }
-                        
-                        // Update cart count
-                        const cartCount = response.cartCount;
-                        const cartIcon = $('.cart-icon');
-                        
+                        // Update cart count in nav
+                        var cartCount = response.cartCount;
+                        var cartIcon = $('.cart-icon');
                         if (cartCount > 0) {
                             if ($('.cart-count').length === 0) {
                                 cartIcon.append('<span class="cart-count absolute -top-1 -right-1 bg-indigo-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">' + cartCount + '</span>');
@@ -202,6 +181,10 @@ try {
                 },
                 error: function() {
                     alert('An error occurred. Please try again.');
+                },
+                complete: function() {
+                    processing = false;
+                    button.prop('disabled', false);
                 }
             });
         });
@@ -211,5 +194,4 @@ try {
 </html>
 <?php
 // End output buffering and send the output
-ob_end_flush();
-?> 
+ob_end_flush(); 
